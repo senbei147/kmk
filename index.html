@@ -1,10 +1,10 @@
 <!DOCTYPE html><html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>輝く御国　合唱パートミキサー</title>
+  <title>合唱パートミキサー（複数曲対応）</title>
   <style>
     body { font-family: sans-serif; padding: 20px; background: #f5f5f5; font-size: 18px; }
-    h1 { margin-bottom: 10px; font-size: 28px; }
+    h1 { margin-bottom: 20px; font-size: 28px; }
     h2 { font-size: 24px; margin-bottom: 10px; }
     #status { font-weight: bold; color: red; margin-left: 10px; font-size: 20px; }
     .card { background: #fff; border-radius: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); padding: 20px; margin-bottom: 25px; }
@@ -35,6 +35,167 @@
       background: #4285f4;
       cursor: pointer;
       box-shadow: 0 0 4px rgba(0,0,0,0.4);
+    }
+    button.mute { flex: 0; background: none; border: none; font-size: 28px; cursor: pointer; }
+    button#playButton { font-size: 22px; padding: 10px 20px; border-radius: 8px; border: none; background: #4285f4; color: white; cursor: pointer; }
+    .tabs { margin-bottom: 20px; }
+    .tab-btn { font-size: 20px; padding: 10px 20px; margin-right: 10px; border: none; border-radius: 8px; cursor: pointer; background: #ccc; }
+    .tab-btn.active { background: #4285f4; color: white; }
+  </style>
+</head>
+<body>
+  <h1>合唱パートミキサー</h1>  <div class="tabs">
+    <button class="tab-btn active" data-song="song1">輝く御国</button>
+    <button class="tab-btn" data-song="song2">感謝します</button>
+  </div><button id="playButton">再生 / 停止</button><span id="status"></span>
+
+  <div id="mixer">
+    <div class="card">
+      <h2>Soprano</h2>
+      <div class="track">
+        <label>Voice</label>
+        <input type="range" id="soprano_Volume" min="0" max="1" step="0.01" value="1">
+        <button class="mute" id="soprano_Mute">🔊</button>
+      </div>
+    </div><div class="card">
+  <h2>Alto</h2>
+  <div class="track">
+    <label>Voice</label>
+    <input type="range" id="alto_Volume" min="0" max="1" step="0.01" value="1">
+    <button class="mute" id="alto_Mute">🔊</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Tenor</h2>
+  <div class="track">
+    <label>Voice</label>
+    <input type="range" id="tenor_Volume" min="0" max="1" step="0.01" value="1">
+    <button class="mute" id="tenor_Mute">🔊</button>
+  </div>
+</div>
+
+  </div>  <script>
+    const fileSets = {
+      song1: {
+        soprano: 'soprano1.mp3',
+        alto: 'alto1.mp3',
+        tenor: 'tenor1.mp3'
+      },
+      song2: {
+        soprano: 'soprano2.mp3',
+        alto: 'alto2.mp3',
+        tenor: 'tenor2.mp3'
+      }
+    };
+
+    let currentSong = 'song1';
+    let audioCtx;
+    let sources = {};
+    let gains = {};
+    let buffers = {};
+    let isPlaying = false;
+    let savedVolumes = {};
+
+    async function loadFiles(song) {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      buffers = {};
+      for (let part in fileSets[song]) {
+        const response = await fetch(fileSets[song][part]);
+        const arrayBuffer = await response.arrayBuffer();
+        buffers[part] = await audioCtx.decodeAudioData(arrayBuffer);
+      }
+    }
+
+    function createSources() {
+      for (let part in buffers) {
+        const source = audioCtx.createBufferSource();
+        source.buffer = buffers[part];
+        source.loop = true;
+
+        const gainNode = audioCtx.createGain();
+        gainNode.gain.value = document.getElementById(part + '_Volume').value;
+
+        source.connect(gainNode).connect(audioCtx.destination);
+
+        sources[part] = source;
+        gains[part] = gainNode;
+      }
+    }
+
+    function startAll() {
+      createSources();
+      const now = audioCtx.currentTime;
+      for (let part in sources) {
+        sources[part].start(now);
+      }
+      isPlaying = true;
+      document.getElementById('status').textContent = '● 再生中';
+    }
+
+    function stopAll() {
+      for (let part in sources) {
+        if (sources[part]) sources[part].stop();
+      }
+      sources = {};
+      isPlaying = false;
+      document.getElementById('status').textContent = '';
+    }
+
+    // 再生ボタン
+    document.getElementById('playButton').addEventListener('click', async () => {
+      if (!buffers.soprano) await loadFiles(currentSong);
+      if (!isPlaying) {
+        startAll();
+      } else {
+        stopAll();
+      }
+    });
+
+    // スライダーとミュート処理
+    Object.keys(fileSets.song1).forEach(part => {
+      const slider = document.getElementById(part + '_Volume');
+      const muteBtn = document.getElementById(part + '_Mute');
+      
+      slider.addEventListener('input', (e) => {
+        if (gains[part]) gains[part].gain.value = e.target.value;
+        savedVolumes[part] = e.target.value;
+      });
+
+      muteBtn.addEventListener('click', () => {
+        if (gains[part]) {
+          if (gains[part].gain.value > 0) {
+            savedVolumes[part] = slider.value;
+            gains[part].gain.value = 0;
+            slider.value = 0;
+            muteBtn.textContent = '🔇';
+          } else {
+            gains[part].gain.value = savedVolumes[part] || 1;
+            slider.value = savedVolumes[part] || 1;
+            muteBtn.textContent = '🔊';
+          }
+        }
+      });
+    });
+
+    // タブ切り替え
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (btn.dataset.song === currentSong) return;
+
+        // 再生中なら止める
+        if (isPlaying) stopAll();
+
+        // タブの見た目切り替え
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        currentSong = btn.dataset.song;
+        buffers = {}; // 新しい曲のバッファをロードする準備
+      });
+    });
+  </script></body>
+</html>      box-shadow: 0 0 4px rgba(0,0,0,0.4);
     }
     button.mute { flex: 0; background: none; border: none; font-size: 28px; cursor: pointer; }
     button#playButton { font-size: 22px; padding: 10px 20px; border-radius: 8px; border: none; background: #4285f4; color: white; cursor: pointer; }
